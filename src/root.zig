@@ -1,4 +1,6 @@
 //! code-workspace library root
 const std = @import("std");
 
-// TODO: Library code will be added here
+pub const workspace = @import("workspace.zig");
+pub const Folder = workspace.Folder;
+pub const Workspace = workspace.Workspace;
