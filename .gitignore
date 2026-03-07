@@ -1,3 +1,9 @@
 .zig-cache/
 zig-out/
 *.o
+
+# VS Code
+.vscode
+
+# Custom
+*.tmp.md
