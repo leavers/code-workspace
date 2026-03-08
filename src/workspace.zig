@@ -43,6 +43,39 @@ pub const Workspace = struct {
     pub fn folderCount(self: *const Workspace) usize {
         return self.folders.items.len;
     }
+
+    /// Serialize the workspace to JSON format
+    /// Caller owns the returned memory and must free it with allocator.free()
+    pub fn toJson(self: *const Workspace, allocator: std.mem.Allocator) ![]u8 {
+        var buffer: std.ArrayList(u8) = .empty;
+        defer buffer.deinit(allocator);
+
+        var stringifier = std.json.Stringify{
+            .writer = buffer.writer(allocator),
+            .options = .{ .whitespace = .indent_2 },
+        };
+
+        // {
+        try stringifier.beginObject();
+        //   "folders": [
+        try stringifier.objectField("folders");
+        try stringifier.beginArray();
+        for (self.folders.items) |folder| {
+            //   { "path": "...", "name": "..." }
+            try stringifier.beginObject();
+            try stringifier.objectField("path");
+            try stringifier.write(folder.path);
+            try stringifier.objectField("name");
+            try stringifier.write(folder.name);
+            try stringifier.endObject();
+        }
+        //   ]
+        try stringifier.endArray();
+        // }
+        try stringifier.endObject();
+
+        return buffer.toOwnedSlice(allocator);
+    }
 };
 
 test "Folder creation" {
@@ -105,4 +138,126 @@ test "Empty workspace" {
     defer workspace.deinit();
 
     try std.testing.expectEqual(@as(usize, 0), workspace.folderCount());
+}
+
+test "JSON serialization - empty workspace" {
+    const gpa = std.testing.allocator;
+
+    var workspace = Workspace.init(gpa);
+    defer workspace.deinit();
+
+    const json = try workspace.toJson(gpa);
+    defer gpa.free(json);
+
+    const expected =
+        \\{
+        \\  "folders": []
+        \\}
+    ;
+    try std.testing.expectEqualStrings(expected, json);
+}
+
+test "JSON serialization - single folder" {
+    const gpa = std.testing.allocator;
+
+    var workspace = Workspace.init(gpa);
+    defer workspace.deinit();
+
+    try workspace.addFolder(Folder.init("my-project", "My Project"));
+
+    const json = try workspace.toJson(gpa);
+    defer gpa.free(json);
+
+    const expected =
+        \\{
+        \\  "folders": [
+        \\    {
+        \\      "path": "my-project",
+        \\      "name": "My Project"
+        \\    }
+        \\  ]
+        \\}
+    ;
+    try std.testing.expectEqualStrings(expected, json);
+}
+
+test "JSON serialization - multiple folders" {
+    const gpa = std.testing.allocator;
+
+    var workspace = Workspace.init(gpa);
+    defer workspace.deinit();
+
+    try workspace.addFolder(Folder.init("project-a", "Project A"));
+    try workspace.addFolder(Folder.init("libs/project-b", "Project B"));
+
+    const json = try workspace.toJson(gpa);
+    defer gpa.free(json);
+
+    const expected =
+        \\{
+        \\  "folders": [
+        \\    {
+        \\      "path": "project-a",
+        \\      "name": "Project A"
+        \\    },
+        \\    {
+        \\      "path": "libs/project-b",
+        \\      "name": "Project B"
+        \\    }
+        \\  ]
+        \\}
+    ;
+    try std.testing.expectEqualStrings(expected, json);
+}
+
+test "JSON serialization - special characters escaping" {
+    const gpa = std.testing.allocator;
+
+    var workspace = Workspace.init(gpa);
+    defer workspace.deinit();
+
+    // Test quotes, backslashes, newlines, and tabs
+    try workspace.addFolder(Folder.init(
+        "path/with\"quotes\\and\\backslashes",
+        "Name with\nnewlines\rand\ttabs",
+    ));
+
+    const json = try workspace.toJson(gpa);
+    defer gpa.free(json);
+
+    const expected =
+        \\{
+        \\  "folders": [
+        \\    {
+        \\      "path": "path/with\"quotes\\and\\backslashes",
+        \\      "name": "Name with\nnewlines\rand\ttabs"
+        \\    }
+        \\  ]
+        \\}
+    ;
+    try std.testing.expectEqualStrings(expected, json);
+}
+
+test "JSON serialization - unicode characters" {
+    const gpa = std.testing.allocator;
+
+    var workspace = Workspace.init(gpa);
+    defer workspace.deinit();
+
+    try workspace.addFolder(Folder.init("项目/路径", "我的工作区"));
+
+    const json = try workspace.toJson(gpa);
+    defer gpa.free(json);
+
+    const expected =
+        \\{
+        \\  "folders": [
+        \\    {
+        \\      "path": "项目/路径",
+        \\      "name": "我的工作区"
+        \\    }
+        \\  ]
+        \\}
+    ;
+    try std.testing.expectEqualStrings(expected, json);
 }

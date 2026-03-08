@@ -59,6 +59,7 @@ Located in `src/workspace.zig`:
 - **`Workspace`**: Represents a VS Code workspace configuration
   - `folders`: Dynamic array of Folder structs
   - Supports adding folders dynamically with proper memory management
+  - `toJson(allocator)`: Serializes workspace to JSON string (caller owns returned memory)
 
 ## Build Commands
 
@@ -97,6 +98,11 @@ Tests are embedded in source files using Zig's `test` blocks:
 1. **Folder creation**: Basic initialization with path and name
 2. **Internationalization**: Chinese characters and spaces in paths/names
 3. **Workspace management**: Adding folders, counting, empty workspace handling
+4. **JSON serialization**:
+   - Empty workspace serialization
+   - Single and multiple folders
+   - Special character escaping (quotes, backslashes, newlines, tabs)
+   - Unicode characters preservation
 
 ### Writing Tests
 
