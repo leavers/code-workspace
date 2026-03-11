@@ -41,6 +41,13 @@ pub fn build(b: *std.Build) void {
         .target = target,
     });
 
+    // Fetch zig-clap dependency and create a module for it
+    const clap_dep = b.dependency("clap", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const clap_mod = clap_dep.module("clap");
+
     // Here we define an executable. An executable needs to have a root module
     // which needs to expose a `main` function. While we could add a main function
     // to the module defined above, it's sometimes preferable to split business
@@ -79,6 +86,7 @@ pub fn build(b: *std.Build) void {
                 // can be extremely useful in case of collisions (which can happen
                 // importing modules from different packages).
                 .{ .name = "code_workspace", .module = mod },
+                .{ .name = "clap", .module = clap_mod },
             },
         }),
     });

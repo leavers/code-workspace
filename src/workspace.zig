@@ -76,6 +76,43 @@ pub const Workspace = struct {
 
         return buffer.toOwnedSlice(allocator);
     }
+
+    // Write the workspace configuration to a .code-workspace file
+    /// Creates parent directories if they don't exist
+    /// Returns error.FileAlreadyExists if file already exists (unless overwrite=true)
+    pub fn writeToFile(
+        self: *const Workspace,
+        allocator: std.mem.Allocator,
+        file_path: []const u8,
+        overwrite: bool,
+    ) !void {
+        // Check if file already exists
+        if (!overwrite) {
+            if (std.fs.cwd().access(file_path, .{})) {
+                return error.FileAlreadyExists;
+            } else |err| switch (err) {
+                error.FileNotFound => {}, // Good, file doesn't exist
+                else => return err, // Other error, propagate it
+            }
+        }
+
+        // Create parent directories if needed
+        if (std.fs.path.dirname(file_path)) |parent_dir| {
+            try std.fs.cwd().makePath(parent_dir);
+        }
+
+        // Generate JSON content
+        const json_content = try self.toJson(allocator);
+        defer allocator.free(json_content);
+
+        // Write to file
+        var file = try std.fs.cwd().createFile(file_path, .{
+            .truncate = true,
+        });
+        defer file.close();
+
+        try file.writeAll(json_content);
+    }
 };
 
 test "Folder creation" {
@@ -260,4 +297,101 @@ test "JSON serialization - unicode characters" {
         \\}
     ;
     try std.testing.expectEqualStrings(expected, json);
+}
+
+test "Write workspace to file" {
+    const gpa = std.testing.allocator;
+
+    // Use a temporary directory for testing
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    var workspace = Workspace.init(gpa);
+    defer workspace.deinit();
+
+    try workspace.addFolder(Folder.init("my-project", "My Project"));
+
+    // Construct file path in temp directory
+    const file_path = try std.fs.path.join(gpa, &[_][]const u8{
+        tmp_dir.dir.fd,
+        "test.code-workspace",
+    });
+    defer gpa.free(file_path);
+
+    // Write the file
+    try workspace.writeToFile(gpa, file_path, false);
+
+    // Verify file exists and has correct content
+    const content = try tmp_dir.dir.readFileAlloc(gpa, "test.code-workspace", 1024);
+    defer gpa.free(content);
+
+    const expected =
+        \\{
+        \\  "folders": [
+        \\    {
+        \\      "path": "my-project",
+        \\      "name": "My Project"
+        \\    }
+        \\  ]
+        \\}
+    ;
+    try std.testing.expectEqualStrings(expected, content);
+}
+
+test "Write workspace creates parent directories" {
+    const gpa = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    var workspace = Workspace.init(gpa);
+    defer workspace.deinit();
+
+    try workspace.addFolder(Folder.init("src", "Source"));
+
+    // Path with nested directories that don't exist yet
+    const file_path = try std.fs.path.join(gpa, &[_][]const u8{
+        tmp_dir.dir.fd,
+        "nested",
+        "deep",
+        "workspace.code-workspace",
+    });
+    defer gpa.free(file_path);
+
+    // Should create parent directories automatically
+    try workspace.writeToFile(gpa, file_path, false);
+
+    // Verify file was created
+    const file = try std.fs.cwd().openFile(file_path, .{});
+    file.close();
+}
+
+test "Write workspace fails if file exists" {
+    const gpa = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    var workspace = Workspace.init(gpa);
+    defer workspace.deinit();
+
+    try workspace.addFolder(Folder.init("project", "Project"));
+
+    const file_path = try std.fs.path.join(gpa, &[_][]const u8{
+        tmp_dir.dir.fd,
+        "existing.code-workspace",
+    });
+    defer gpa.free(file_path);
+
+    // First write should succeed
+    try workspace.writeToFile(gpa, file_path, false);
+
+    // Second write without overwrite should fail
+    try std.testing.expectError(
+        error.FileAlreadyExists,
+        workspace.writeToFile(gpa, file_path, false),
+    );
+
+    // Write with overwrite=true should succeed
+    try workspace.writeToFile(gpa, file_path, true);
 }
