@@ -7,6 +7,15 @@ const Folder = code_workspace.Folder;
 const git = code_workspace.git;
 const CloneSpec = git.CloneSpec;
 
+/// Generate a unique temporary directory name
+fn generateTempDirName(allocator: std.mem.Allocator, prefix: []const u8) ![]const u8 {
+    const timestamp = std.time.milliTimestamp();
+    var prng = std.rand.DefaultPrng.init(@intCast(timestamp));
+    const random = prng.random();
+    const suffix = random.int(u32);
+    return try std.fmt.allocPrint(allocator, "{s}-{d}-{d}", .{ prefix, timestamp, suffix });
+}
+
 pub const BuilderOptions = struct {
     /// Workspace display name
     name: []const u8,
@@ -61,8 +70,11 @@ pub fn prepareWorkspace(
     allocator: std.mem.Allocator,
     options: BuilderOptions,
 ) !PreparedWorkspace {
-    // Create temp directory
-    const temp_path = try std.fs.path.join(allocator, &.{ options.temp_parent, ".tmp-workspace-XXXXXX" });
+    // Create temp directory with unique name
+    const temp_name = try generateTempDirName(allocator, ".tmp-workspace");
+    defer allocator.free(temp_name);
+    
+    const temp_path = try std.fs.path.join(allocator, &.{ options.temp_parent, temp_name });
     errdefer allocator.free(temp_path);
 
     // Actually create the directory (simplified - in real impl use mkdtemp)
