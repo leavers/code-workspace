@@ -1,6 +1,7 @@
 //! Command line argument parsing module
 const std = @import("std");
 const clap = @import("clap");
+const git = @import("git.zig");
 
 /// Parsed command line arguments
 pub const Args = struct {
@@ -17,6 +18,8 @@ pub const Args = struct {
         init,
     };
 
+    pub const CloneSpec = git.CloneSpec;
+
     pub const CreateOptions = struct {
         /// Workspace directory name (positional argument)
         workspace_dir: []const u8,
@@ -26,13 +29,6 @@ pub const Args = struct {
         clones: []const CloneSpec,
         /// Force overwrite (-f/--force)
         force: bool,
-    };
-
-    pub const CloneSpec = struct {
-        /// Git repository URL
-        url: []const u8,
-        /// Optional clone directory (relative to workspace)
-        dir: ?[]const u8,
     };
 
     pub const InitOptions = struct {
@@ -61,12 +57,9 @@ pub fn parseArgs(allocator: std.mem.Allocator) !Args {
         \\
     );
 
-    var diag = clap.Diagnostic{};
-    var res = clap.parse(clap.Help, &params, clap.parsers.default, .{
-        .diagnostic = &diag,
+    const res = clap.parse(clap.Help, &params, clap.parsers.default, .{
         .allocator = allocator,
     }) catch |err| {
-        diag.report(std.io.getStdErr().Writer(), err) catch {};
         return err;
     };
     defer res.deinit();
@@ -77,32 +70,30 @@ pub fn parseArgs(allocator: std.mem.Allocator) !Args {
         return error.MissingSubcommand;
     }
 
-    const command_str = res.positionals[0];
+    const command_str = res.positionals[0][0];
     const command = std.meta.stringToEnum(Args.Command, command_str) orelse {
         std.debug.print("Error: Invalid subcommand '{s}'. Use 'create' or 'init'.\n", .{command_str});
         return error.UnknownCommand;
     };
 
     // Parse clones
-    var clones = std.ArrayList(Args.CloneSpec).init(allocator);
-    errdefer clones.deinit();
+    var clones: std.ArrayList(Args.CloneSpec) = .empty;
+    errdefer clones.deinit(allocator);
 
-    if (res.args.clone) |clone_list| {
-        for (clone_list) |clone_str| {
-            const spec = try parseCloneSpec(allocator, clone_str);
-            try clones.append(spec);
-        }
+    for (res.args.clone) |clone_str| {
+        const spec = try parseCloneSpec(allocator, clone_str);
+        try clones.append(allocator, spec);
     }
 
     return switch (command) {
         .create => {
-            if (res.positionals.len < 2) {
+            if (res.positionals[0].len < 2) {
                 std.debug.print("Error: create requires <workspace-dir> argument.\n", .{});
                 return error.MissingArgument;
             }
 
             // For create, scan is not allowed
-            if (res.args.scan) {
+            if (res.args.scan != 0) {
                 std.debug.print("Error: --scan is not allowed with create command.\n", .{});
                 return error.InvalidOption;
             }
@@ -110,17 +101,17 @@ pub fn parseArgs(allocator: std.mem.Allocator) !Args {
             return Args{
                 .command = .create,
                 .create_options = .{
-                    .workspace_dir = res.positionals[1],
+                    .workspace_dir = res.positionals[0][1],
                     .name = res.args.name,
-                    .clones = try clones.toOwnedSlice(),
-                    .force = res.args.force,
+                    .clones = try clones.toOwnedSlice(allocator),
+                    .force = res.args.force != 0,
                 },
                 .init_options = null,
             };
         },
         .init => {
             // For init, validate scan vs clone mutual exclusion
-            if (res.args.scan and clones.items.len > 0) {
+            if (res.args.scan != 0 and res.args.clone.len > 0) {
                 std.debug.print("Error: --scan and --clone cannot be used together.\n", .{});
                 return error.InvalidOptionCombination;
             }
@@ -130,9 +121,9 @@ pub fn parseArgs(allocator: std.mem.Allocator) !Args {
                 .create_options = null,
                 .init_options = .{
                     .name = res.args.name,
-                    .scan = res.args.scan,
-                    .clones = try clones.toOwnedSlice(),
-                    .force = res.args.force,
+                    .scan = res.args.scan != 0,
+                    .clones = try clones.toOwnedSlice(allocator),
+                    .force = res.args.force != 0,
                 },
             };
         },

@@ -1,16 +1,15 @@
 //! Workspace preparation with atomic operations
 //! Creates workspace in temp dir, then moves to final location on success
 const std = @import("std");
-const code_workspace = @import("code_workspace");
-const Workspace = code_workspace.Workspace;
-const Folder = code_workspace.Folder;
-const git = code_workspace.git;
+const Workspace = @import("workspace.zig").Workspace;
+const Folder = @import("workspace.zig").Folder;
+const git = @import("git.zig");
 const CloneSpec = git.CloneSpec;
 
 /// Generate a unique temporary directory name
 fn generateTempDirName(allocator: std.mem.Allocator, prefix: []const u8) ![]const u8 {
     const timestamp = std.time.milliTimestamp();
-    var prng = std.rand.DefaultPrng.init(@intCast(timestamp));
+    var prng = std.Random.DefaultPrng.init(@intCast(timestamp));
     const random = prng.random();
     const suffix = random.int(u32);
     return try std.fmt.allocPrint(allocator, "{s}-{d}-{d}", .{ prefix, timestamp, suffix });
@@ -83,7 +82,7 @@ pub fn prepareWorkspace(
 
     // Build workspace configuration
     var workspace = Workspace.init(allocator);
-    defer workspace.deinit();
+    defer workspace.deinit(allocator);
 
     // Clone repositories
     for (options.clones) |clone_spec| {
@@ -96,7 +95,7 @@ pub fn prepareWorkspace(
         try git.cloneRepository(allocator, clone_spec.url, target_path);
 
         // Add to workspace (path is relative to workspace root)
-        try workspace.addFolder(Folder.init(dir_name, dir_name));
+        try workspace.addFolder(allocator, Folder.init(dir_name, dir_name));
     }
 
     // Write workspace file

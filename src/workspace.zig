@@ -24,19 +24,20 @@ pub const Workspace = struct {
 
     /// Create a new empty workspace
     pub fn init(allocator: std.mem.Allocator) Workspace {
+        _ = allocator;
         return .{
-            .folders = std.ArrayList(Folder).init(allocator),
+            .folders = .empty,
         };
     }
 
     /// Deallocate the workspace
-    pub fn deinit(self: *Workspace) void {
-        self.folders.deinit();
+    pub fn deinit(self: *Workspace, allocator: std.mem.Allocator) void {
+        self.folders.deinit(allocator);
     }
 
     /// Add a folder to the workspace
-    pub fn addFolder(self: *Workspace, folder: Folder) !void {
-        try self.folders.append(folder);
+    pub fn addFolder(self: *Workspace, allocator: std.mem.Allocator, folder: Folder) !void {
+        try self.folders.append(allocator, folder);
     }
 
     /// Get the number of folders in the workspace
@@ -47,11 +48,11 @@ pub const Workspace = struct {
     /// Serialize the workspace to JSON format
     /// Caller owns the returned memory and must free it with allocator.free()
     pub fn toJson(self: *const Workspace, allocator: std.mem.Allocator) ![]u8 {
-        var buffer: std.ArrayList(u8) = .empty;
-        defer buffer.deinit(allocator);
+        var out: std.io.Writer.Allocating = .init(allocator);
+        defer out.deinit();
 
         var stringifier = std.json.Stringify{
-            .writer = buffer.writer(allocator),
+            .writer = &out.writer,
             .options = .{ .whitespace = .indent_2 },
         };
 
@@ -74,7 +75,7 @@ pub const Workspace = struct {
         // }
         try stringifier.endObject();
 
-        return buffer.toOwnedSlice(allocator);
+        return try allocator.dupe(u8, out.writer.buffer[0..out.writer.end]);
     }
 
     // Write the workspace configuration to a .code-workspace file
@@ -125,12 +126,12 @@ test "Folder with Chinese characters and spaces" {
     const gpa = std.testing.allocator;
 
     var workspace = Workspace.init(gpa);
-    defer workspace.deinit();
+    defer workspace.deinit(gpa);
 
     // Path and name with Chinese characters and spaces
-    try workspace.addFolder(Folder.init("项目/我的工作区", "我的工作区"));
-    try workspace.addFolder(Folder.init("resources/awesome 资源", "Awesome 资源库"));
-    try workspace.addFolder(Folder.init("libs/依赖库 v2", "依赖库 V2 版本"));
+    try workspace.addFolder(gpa, Folder.init("项目/我的工作区", "我的工作区"));
+    try workspace.addFolder(gpa, Folder.init("resources/awesome 资源", "Awesome 资源库"));
+    try workspace.addFolder(gpa, Folder.init("libs/依赖库 v2", "依赖库 V2 版本"));
 
     try std.testing.expectEqual(@as(usize, 3), workspace.folderCount());
 
@@ -149,16 +150,16 @@ test "Workspace creation and folder management" {
     const gpa = std.testing.allocator;
 
     var workspace = Workspace.init(gpa);
-    defer workspace.deinit();
+    defer workspace.deinit(gpa);
 
     // Initially empty
     try std.testing.expectEqual(@as(usize, 0), workspace.folderCount());
 
     // Add folders
-    try workspace.addFolder(Folder.init("project-a", "Project A"));
+    try workspace.addFolder(gpa, Folder.init("project-a", "Project A"));
     try std.testing.expectEqual(@as(usize, 1), workspace.folderCount());
 
-    try workspace.addFolder(Folder.init("libs/project-b", "Project B"));
+    try workspace.addFolder(gpa, Folder.init("libs/project-b", "Project B"));
     try std.testing.expectEqual(@as(usize, 2), workspace.folderCount());
 
     // Verify folder contents
@@ -172,7 +173,7 @@ test "Empty workspace" {
     const gpa = std.testing.allocator;
 
     var workspace = Workspace.init(gpa);
-    defer workspace.deinit();
+    defer workspace.deinit(gpa);
 
     try std.testing.expectEqual(@as(usize, 0), workspace.folderCount());
 }
@@ -181,7 +182,7 @@ test "JSON serialization - empty workspace" {
     const gpa = std.testing.allocator;
 
     var workspace = Workspace.init(gpa);
-    defer workspace.deinit();
+    defer workspace.deinit(gpa);
 
     const json = try workspace.toJson(gpa);
     defer gpa.free(json);
@@ -198,9 +199,9 @@ test "JSON serialization - single folder" {
     const gpa = std.testing.allocator;
 
     var workspace = Workspace.init(gpa);
-    defer workspace.deinit();
+    defer workspace.deinit(gpa);
 
-    try workspace.addFolder(Folder.init("my-project", "My Project"));
+    try workspace.addFolder(gpa, Folder.init("my-project", "My Project"));
 
     const json = try workspace.toJson(gpa);
     defer gpa.free(json);
@@ -222,10 +223,10 @@ test "JSON serialization - multiple folders" {
     const gpa = std.testing.allocator;
 
     var workspace = Workspace.init(gpa);
-    defer workspace.deinit();
+    defer workspace.deinit(gpa);
 
-    try workspace.addFolder(Folder.init("project-a", "Project A"));
-    try workspace.addFolder(Folder.init("libs/project-b", "Project B"));
+    try workspace.addFolder(gpa, Folder.init("project-a", "Project A"));
+    try workspace.addFolder(gpa, Folder.init("libs/project-b", "Project B"));
 
     const json = try workspace.toJson(gpa);
     defer gpa.free(json);
@@ -251,10 +252,10 @@ test "JSON serialization - special characters escaping" {
     const gpa = std.testing.allocator;
 
     var workspace = Workspace.init(gpa);
-    defer workspace.deinit();
+    defer workspace.deinit(gpa);
 
     // Test quotes, backslashes, newlines, and tabs
-    try workspace.addFolder(Folder.init(
+    try workspace.addFolder(gpa, Folder.init(
         "path/with\"quotes\\and\\backslashes",
         "Name with\nnewlines\rand\ttabs",
     ));
@@ -279,9 +280,9 @@ test "JSON serialization - unicode characters" {
     const gpa = std.testing.allocator;
 
     var workspace = Workspace.init(gpa);
-    defer workspace.deinit();
+    defer workspace.deinit(gpa);
 
-    try workspace.addFolder(Folder.init("项目/路径", "我的工作区"));
+    try workspace.addFolder(gpa, Folder.init("项目/路径", "我的工作区"));
 
     const json = try workspace.toJson(gpa);
     defer gpa.free(json);
@@ -307,9 +308,9 @@ test "Write workspace to file" {
     defer tmp_dir.cleanup();
 
     var workspace = Workspace.init(gpa);
-    defer workspace.deinit();
+    defer workspace.deinit(gpa);
 
-    try workspace.addFolder(Folder.init("my-project", "My Project"));
+    try workspace.addFolder(gpa, Folder.init("my-project", "My Project"));
 
     // Construct file path in temp directory
     const file_path = try std.fs.path.join(gpa, &[_][]const u8{
@@ -345,9 +346,9 @@ test "Write workspace creates parent directories" {
     defer tmp_dir.cleanup();
 
     var workspace = Workspace.init(gpa);
-    defer workspace.deinit();
+    defer workspace.deinit(gpa);
 
-    try workspace.addFolder(Folder.init("src", "Source"));
+    try workspace.addFolder(gpa, Folder.init("src", "Source"));
 
     // Path with nested directories that don't exist yet
     const file_path = try std.fs.path.join(gpa, &[_][]const u8{
@@ -373,9 +374,9 @@ test "Write workspace fails if file exists" {
     defer tmp_dir.cleanup();
 
     var workspace = Workspace.init(gpa);
-    defer workspace.deinit();
+    defer workspace.deinit(gpa);
 
-    try workspace.addFolder(Folder.init("project", "Project"));
+    try workspace.addFolder(gpa, Folder.init("project", "Project"));
 
     const file_path = try std.fs.path.join(gpa, &[_][]const u8{
         tmp_dir.dir.fd,

@@ -1,11 +1,10 @@
 //! Init command implementation
 const std = @import("std");
-const code_workspace = @import("code_workspace");
-const Workspace = code_workspace.Workspace;
-const Folder = code_workspace.Folder;
-const git = code_workspace.git;
+const Workspace = @import("../workspace.zig").Workspace;
+const Folder = @import("../workspace.zig").Folder;
+const git = @import("../git.zig");
 const CloneSpec = git.CloneSpec;
-const workspace_builder = code_workspace.workspace_builder;
+const workspace_builder = @import("../workspace_builder.zig");
 
 pub const InitOptions = struct {
     /// Workspace display name (defaults to current directory name if null)
@@ -29,8 +28,8 @@ pub fn initWorkspace(
     const workspace_name = options.name orelse std.fs.path.basename(cwd);
 
     // Scan directories if requested
-    var folders = std.ArrayList(Folder).init(allocator);
-    defer folders.deinit();
+    var folders: std.ArrayList(Folder) = .empty;
+    defer folders.deinit(allocator);
 
     if (options.scan) {
         // Validate: scan and clones are mutually exclusive
@@ -51,7 +50,7 @@ pub fn initWorkspace(
 
             // Only include directories
             if (entry.kind == .directory) {
-                try folders.append(Folder.init(entry.name, entry.name));
+                try folders.append(allocator, Folder.init(entry.name, entry.name));
             }
         }
     }
@@ -70,10 +69,10 @@ pub fn initWorkspace(
 
     // No clones, just create workspace file with scanned or empty folders
     var workspace = Workspace.init(allocator);
-    defer workspace.deinit();
+    defer workspace.deinit(allocator);
 
     for (folders.items) |folder| {
-        try workspace.addFolder(folder);
+        try workspace.addFolder(allocator, folder);
     }
 
     const file_name = try std.mem.concat(allocator, u8, &.{ workspace_name, ".code-workspace" });

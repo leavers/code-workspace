@@ -1,11 +1,10 @@
 //! Create command implementation
 const std = @import("std");
-const code_workspace = @import("code_workspace");
-const Workspace = code_workspace.Workspace;
-const Folder = code_workspace.Folder;
-const git = code_workspace.git;
+const Workspace = @import("../workspace.zig").Workspace;
+const Folder = @import("../workspace.zig").Folder;
+const git = @import("../git.zig");
 const CloneSpec = git.CloneSpec;
-const workspace_builder = code_workspace.workspace_builder;
+const workspace_builder = @import("../workspace_builder.zig");
 
 pub const CreateOptions = struct {
     /// Target workspace directory
@@ -27,14 +26,16 @@ pub fn createWorkspace(
     // Determine workspace name
     const workspace_name = options.name orelse std.fs.path.basename(options.workspace_dir);
 
-    // Check if target exists (without force)
-    if (!options.force) {
-        if (std.fs.cwd().access(options.workspace_dir, .{})) {
+    // Check if target exists
+    if (std.fs.cwd().access(options.workspace_dir, .{})) {
+        if (!options.force) {
             return error.DirectoryAlreadyExists;
-        } else |err| switch (err) {
-            error.FileNotFound => {},
-            else => |e| return e,
         }
+        // Force: delete existing directory
+        try std.fs.cwd().deleteTree(options.workspace_dir);
+    } else |err| switch (err) {
+        error.FileNotFound => {},
+        else => |e| return e,
     }
 
     // Prepare workspace in temp directory
@@ -54,6 +55,8 @@ pub fn createWorkspace(
     prepared.moveTo(allocator, options.workspace_dir) catch |err| {
         // If move fails, clean up temp directory
         prepared.cleanup(allocator);
+        allocator.free(prepared.name);
         return err;
     };
+    allocator.free(prepared.name);
 }
