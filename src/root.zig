@@ -11,6 +11,7 @@ pub const cli = @import("cli.zig");
 pub const Args = cli.Args;
 pub const commands = struct {
     pub const create = @import("commands/create.zig");
+    pub const init = @import("commands/init.zig");
 };
 
 // Utilities
