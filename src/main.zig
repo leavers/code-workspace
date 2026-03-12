@@ -10,6 +10,10 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     const args = cli.parseArgs(allocator) catch |err| {
+        if (err == error.ShowHelp) {
+            printUsage();
+            return;
+        }
         printUsage();
         return err;
     };

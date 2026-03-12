@@ -64,8 +64,13 @@ pub fn parseArgs(allocator: std.mem.Allocator) !Args {
     };
     defer res.deinit();
 
+    // Handle help flag
+    if (res.args.help != 0) {
+        return error.ShowHelp;
+    }
+
     // Check for subcommand
-    if (res.positionals.len == 0) {
+    if (res.positionals[0].len == 0) {
         std.debug.print("Error: Missing subcommand. Use 'create' or 'init'.\n", .{});
         return error.MissingSubcommand;
     }
