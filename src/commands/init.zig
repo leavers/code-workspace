@@ -55,15 +55,43 @@ pub fn initWorkspace(
         }
     }
 
-    // If clones are provided, prepare them in temp directory
+    // If clones are provided, clone directly to current directory
     if (options.clones.len > 0) {
-        const prepared = try workspace_builder.prepareWorkspace(allocator, .{
-            .name = workspace_name,
-            .clones = options.clones,
-            .temp_parent = ".",
-        });
-        // Move only the workspace file to current directory
-        try prepared.moveWorkspaceFile(allocator, ".");
+        var workspace = Workspace.init(allocator);
+        defer workspace.deinit(allocator);
+
+        // Track allocated dir_names for cleanup
+        var dir_names = std.ArrayList([]const u8).empty;
+        defer {
+            for (dir_names.items) |name| allocator.free(name);
+            dir_names.deinit(allocator);
+        }
+
+        for (options.clones) |clone_spec| {
+            const dir_name = try clone_spec.getDirName(allocator);
+            try dir_names.append(allocator, dir_name);
+
+            // Clone directly to current directory
+            try git.cloneRepository(allocator, clone_spec.url, dir_name);
+
+            // Add to workspace
+            try workspace.addFolder(allocator, Folder.init(dir_name, dir_name));
+        }
+
+        const file_name = try std.mem.concat(allocator, u8, &.{ workspace_name, ".code-workspace" });
+        defer allocator.free(file_name);
+
+        // Check if file exists
+        if (!options.force) {
+            if (std.fs.cwd().access(file_name, .{})) {
+                return error.WorkspaceFileAlreadyExists;
+            } else |err| switch (err) {
+                error.FileNotFound => {},
+                else => |e| return e,
+            }
+        }
+
+        try workspace.writeToFile(allocator, file_name, options.force);
         return;
     }
 

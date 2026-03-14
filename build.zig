@@ -12,7 +12,7 @@ pub fn build(b: *std.Build) void {
 
     // Only executable, no library module
     const exe = b.addExecutable(.{
-        .name = "code_workspace",
+        .name = "code-workspace",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,

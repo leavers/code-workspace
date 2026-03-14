@@ -1,29 +1,33 @@
 # code-workspace
 
-A tiny CLI tool written in Zig for generating VS Code workspace configuration files.
+A CLI tool written in Zig for generating VS Code workspace configuration files.
 
 ## Project Overview
 
 - **Name**: code-workspace
 - **Language**: Zig (minimum version 0.15.2)
-- **Version**: 0.0.0
 - **License**: MIT License (Copyright 2026 Chang)
-- **Purpose**: Generate VS Code workspace files (.code-workspace) programmatically
+- **Purpose**: Generate VS Code workspace files (.code-workspace) programmatically with git clone support
 
 ## Project Structure
 
 ```
 .
-├── build.zig          # Zig build script - defines build targets, tests, and dependencies
-├── build.zig.zon      # Zig package manifest - package metadata and dependencies
+├── build.zig                  # Zig build script
+├── build.zig.zon              # Zig package manifest
 ├── src/
-│   ├── main.zig       # CLI entry point (executable)
-│   ├── root.zig       # Library root module - exports public API
-│   └── workspace.zig  # Core workspace structures (Folder, Workspace)
-├── .vscode/settings.json  # VS Code workspace color theme settings
-├── .gitignore         # Git ignore patterns
-├── LICENSE            # MIT License
-└── README.md          # Brief project description
+│   ├── main.zig               # CLI entry point
+│   ├── cli.zig                # Command line argument parsing (using zig-clap)
+│   ├── workspace.zig          # Core workspace structures (Folder, Workspace)
+│   ├── git.zig                # Git operations (clone, URL parsing)
+│   ├── workspace_builder.zig  # Atomic workspace preparation
+│   └── commands/
+│       ├── create.zig         # `create` command implementation
+│       └── init.zig           # `init` command implementation
+├── .vscode/settings.json      # VS Code workspace color theme settings
+├── .gitignore                 # Git ignore patterns
+├── LICENSE                    # MIT License
+└── README.md                  # Project description
 ```
 
 ## Technology Stack
@@ -31,22 +35,24 @@ A tiny CLI tool written in Zig for generating VS Code workspace configuration fi
 - **Language**: Zig (version 0.15.2)
 - **Build System**: Zig's native build system (`build.zig`)
 - **Package Manager**: Zig package manager (`build.zig.zon`)
-- **Dependencies**: None (uses only Zig standard library)
+- **Dependencies**: 
+  - [zig-clap](https://github.com/Hejsil/zig-clap) (0.11.0) - Command line argument parsing
 
 ## Architecture
 
-The project follows a dual-module architecture:
+This is a **pure CLI tool** (not a library). All code is organized under the executable module.
 
-1. **Library Module** (`code_workspace`):
-   - Entry point: `src/root.zig`
-   - Provides reusable workspace configuration structures
-   - Can be imported by other Zig projects
-   - Exports: `Workspace`, `Folder`, and `workspace` module
+### Module Organization
 
-2. **Executable Module** (`code_workspace` binary):
-   - Entry point: `src/main.zig`
-   - CLI interface for end users
-   - Imports the library module for core functionality
+| File | Purpose |
+|------|---------|
+| `main.zig` | CLI entry point, command dispatch |
+| `cli.zig` | Argument parsing using zig-clap |
+| `workspace.zig` | Core data structures and JSON serialization |
+| `git.zig` | Git clone operations and URL parsing |
+| `workspace_builder.zig` | Atomic workspace creation (temp dir + move) |
+| `commands/create.zig` | `create` command implementation |
+| `commands/init.zig` | `init` command implementation |
 
 ### Core Data Structures
 
@@ -58,147 +64,126 @@ Located in `src/workspace.zig`:
 
 - **`Workspace`**: Represents a VS Code workspace configuration
   - `folders`: Dynamic array of Folder structs
-  - Supports adding folders dynamically with proper memory management
-  - `toJson(allocator)`: Serializes workspace to JSON string (caller owns returned memory)
+  - `toJson(allocator)`: Serializes workspace to formatted JSON
+  - `writeToFile(allocator, path, overwrite)`: Writes to .code-workspace file
 
 ## Build Commands
 
-All commands are run from the project root:
-
 ```bash
-# Build the project (creates executable in zig-out/bin/)
+# Build the project
 zig build
 
-# Run the executable
-zig build run
+# Run with arguments
+zig build run -- create my-workspace -n "My Workspace"
+zig build run -- init --scan
+zig build run -- --help
 
-# Run all tests
+# Run tests
 zig build test
 
-# Build with specific optimization mode
+# Build for release
 zig build -Doptimize=ReleaseFast
-
-# Show all available build options
-zig build --help
 
 # Clean build artifacts
 rm -rf zig-out/ .zig-cache/
+```
+
+## CLI Usage
+
+### Create a new workspace directory
+
+```bash
+code-workspace create <directory> [options]
+
+Options:
+  -n, --name <name>       Workspace display name (default: directory name)
+  -c, --clone <spec>      Clone a repository (format: "url" or "url dir")
+  -f, --force             Overwrite if directory exists
+  -h, --help              Show help
+
+Examples:
+  code-workspace create my-project -n "My Project"
+  code-workspace create my-workspace -c "git@github.com:user/repo.git"
+  code-workspace create my-workspace -c "git@github.com:user/repo.git subdir/repo" -f
+```
+
+### Initialize workspace in current directory
+
+```bash
+code-workspace init [options]
+
+Options:
+  -n, --name <name>       Workspace display name (default: current dir name)
+  -c, --clone <spec>      Clone a repository (cannot use with --scan)
+  -s, --scan              Scan current directory for subdirectories
+  -f, --force             Overwrite if .code-workspace file exists
+  -h, --help              Show help
+
+Examples:
+  code-workspace init --scan
+  code-workspace init -n "My Workspace" -c "git@github.com:user/repo.git"
 ```
 
 ## Testing Strategy
 
 Tests are embedded in source files using Zig's `test` blocks:
 
-- **Location**: Tests are in `src/workspace.zig` alongside the code they test
-- **Run**: `zig build test`
-- **Framework**: Zig's built-in testing framework (`std.testing`)
-
-### Current Test Coverage
-
-1. **Folder creation**: Basic initialization with path and name
-2. **Internationalization**: Chinese characters and spaces in paths/names
-3. **Workspace management**: Adding folders, counting, empty workspace handling
-4. **JSON serialization**:
-   - Empty workspace serialization
-   - Single and multiple folders
-   - Special character escaping (quotes, backslashes, newlines, tabs)
-   - Unicode characters preservation
-
-### Writing Tests
-
-Tests use the standard Zig pattern:
-
-```zig
-test "description of test" {
-    const gpa = std.testing.allocator;  // Use testing allocator
-    // Test code here
-    try std.testing.expectEqual(expected, actual);
-}
+```bash
+# Run all tests
+zig build test
 ```
 
-Always use `std.testing.allocator` for test memory management and use `defer` for cleanup.
+### Test Coverage
+
+- **Workspace**: Creation, folder management, JSON serialization
+- **Git operations**: URL parsing, clone specification parsing
+- **Commands**: create and init command logic
+- **CLI**: Argument parsing (basic validation)
 
 ## Code Style Guidelines
 
 ### Comment Style
 
-- **Use standard Zig comments only**: `//` (regular), `///` (doc comment), and `//!` (module doc)
-- **No decorative elements**: Avoid visual separators like `// ============== Tests ==============`, headers with repeated characters, or ASCII art
-- **No decorative separators**: Don't use lines of `=`, `-`, `*`, or `#` to create visual sections
-- **Let code structure speak**: Use clear names, doc comments, and proper module organization instead of visual separators
+- Use standard Zig comments: `//`, `///`, `//!`
+- No decorative separators (lines of `=`, `-`, `*`, etc.)
+- Let code structure speak through clear names and doc comments
 
 ### Naming Conventions
 
-- **Types/Structs**: `PascalCase` (e.g., `Workspace`, `Folder`)
-- **Functions**: `snake_case` (e.g., `add_folder`, `folder_count`)
-- **Variables**: `snake_case`
+- **Types/Structs**: `PascalCase`
+- **Functions/Variables**: `snake_case`
 - **Constants**: `snake_case` or `SCREAMING_SNAKE_CASE`
-
-### Documentation
-
-- **Module-level**: Use `//!` at the top of files
-- **Public declarations**: Use `///` before the declaration
-- **Private items**: Documentation is optional
-
-Example:
-```zig
-//! Workspace configuration structures
-
-/// Represents a folder in the workspace
-pub const Folder = struct {
-    /// Path to the folder (relative or absolute)
-    path: []const u8,
-    ...
-};
-```
 
 ### Memory Management
 
-- Use Zig's allocator pattern consistently
-- Pass `std.mem.Allocator` explicitly to functions that need it
-- Always pair allocations with `defer` deallocation
-- For structs with dynamic memory, provide `init()` and `deinit()` methods
+- Pass `std.mem.Allocator` explicitly
+- Use `defer` for cleanup
+- ArrayList pattern: `var list: std.ArrayList(T) = .empty; defer list.deinit(allocator);`
 
 ### Error Handling
 
-- Use Zig's error union type (`!Type`)
-- Propagate errors with `try` keyword
-- Handle errors explicitly when recovery is needed
+- Use error unions (`!Type`)
+- Propagate with `try`
+- Define custom errors as needed
 
 ## Development Workflow
 
-1. **Make changes** to source files in `src/`
-2. **Run tests**: `zig build test`
-3. **Run the CLI**: `zig build run`
-4. **Build for release**: `zig build -Doptimize=ReleaseFast`
-
-## VS Code Integration
-
-The project includes `.vscode/settings.json` with custom color theming (purplish scheme) to help distinguish this project window from others. Note that `.vscode/` is in `.gitignore`, so local VS Code settings won't be committed.
-
-The tool generates VS Code workspace files (`.code-workspace`) which are JSON configurations that define multi-root workspaces.
+1. Edit source files in `src/`
+2. Run tests: `zig build test`
+3. Run CLI: `zig build run -- <command>`
+4. Build release: `zig build -Doptimize=ReleaseFast`
 
 ## Adding Dependencies
 
-To add external dependencies:
-
 ```bash
-zig fetch --save <url>
+zig fetch --save git+https://github.com/user/repo#tag
 ```
 
-Then update `build.zig` to import and use the module.
+Update `build.zig` to import the module.
 
 ## Security Considerations
 
-- The project handles file paths - ensure proper validation when implementing file I/O
-- No network operations currently
-- MIT licensed - follow license terms when distributing
-
-## Future Development Notes
-
-- CLI is currently minimal (just prints "code-workspace CLI")
-- Core workspace structures are implemented and tested
-- Next steps likely include:
-  - JSON serialization for workspace files
-  - CLI argument parsing
-  - File system scanning for workspace folder discovery
+- Validates file paths before operations
+- Uses atomic operations (temp dir + move) for workspace creation
+- Git commands are executed with user permissions
+- MIT licensed
