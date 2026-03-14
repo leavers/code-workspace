@@ -41,16 +41,17 @@ pub const CloneSpec = struct {
         }
 
         // Extract from URL: https://github.com/user/repo.git -> repo
-        var url_copy = try allocator.dupe(u8, self.url);
+        const url_copy = try allocator.dupe(u8, self.url);
         defer allocator.free(url_copy);
 
-        // Remove trailing .git if present
-        if (std.mem.endsWith(u8, url_copy, ".git")) {
-            url_copy = url_copy[0 .. url_copy.len - 4];
-        }
+        // Slice without .git suffix for basename extraction
+        const url_for_basename = if (std.mem.endsWith(u8, url_copy, ".git"))
+            url_copy[0 .. url_copy.len - 4]
+        else
+            url_copy;
 
         // Get last component of path
-        const basename = std.fs.path.basename(url_copy);
+        const basename = std.fs.path.basename(url_for_basename);
 
         return try allocator.dupe(u8, basename);
     }

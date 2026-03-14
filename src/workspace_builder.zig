@@ -84,10 +84,17 @@ pub fn prepareWorkspace(
     var workspace = Workspace.init(allocator);
     defer workspace.deinit(allocator);
 
+    // Track allocated dir_names for cleanup after workspace is written
+    var dir_names = std.ArrayList([]const u8).empty;
+    defer {
+        for (dir_names.items) |name| allocator.free(name);
+        dir_names.deinit(allocator);
+    }
+
     // Clone repositories
     for (options.clones) |clone_spec| {
         const dir_name = try clone_spec.getDirName(allocator);
-        defer allocator.free(dir_name);
+        try dir_names.append(allocator, dir_name);
 
         const target_path = try std.fs.path.join(allocator, &.{ temp_path, dir_name });
         defer allocator.free(target_path);
