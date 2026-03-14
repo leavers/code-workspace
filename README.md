@@ -10,7 +10,34 @@ A CLI tool written in Zig for generating VS Code multi-root workspace configurat
 
 ## Installation
 
-Download the executable for your platform from [Releases](https://github.com/yourusername/code-workspace/releases) and place it in your PATH.
+This project is written in Zig and needs to be built from source.
+
+### Prerequisites
+
+- [Zig](https://ziglang.org/download/) 0.15.2 or higher
+
+### Build from Source
+
+1. Clone the repository
+
+```bash
+git clone https://github.com/yourusername/code-workspace.git
+cd code-workspace
+```
+
+2. Build the release version
+
+```bash
+zig build -Doptimize=ReleaseFast
+```
+
+3. Add the executable to your PATH
+
+```bash
+# The executable is located at zig-out/bin/code-workspace
+# For example, copy it to ~/.local/bin/
+cp zig-out/bin/code-workspace ~/.local/bin/
+```
 
 ## Usage
 
